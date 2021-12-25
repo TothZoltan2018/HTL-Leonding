@@ -27,12 +27,12 @@ namespace AsyncWeb.UserInterface
             InitializeComponent();
         }
 
-        private void Button_Click(object sender, RoutedEventArgs e)
+        // Good way with async
+        private async void Button_Click(object sender, RoutedEventArgs e)
         {
-            using HttpClient client = new HttpClient();
-            // Bad code, brcause .Result is blocking
-            HttpResponseMessage response = client.GetAsync("http://localhost:5000").Result;
-            string result = response.Content.ReadAsStringAsync().Result;
+            using HttpClient client = new HttpClient();            
+            HttpResponseMessage response = await client.GetAsync("http://localhost:5000");
+            string result = await response.Content.ReadAsStringAsync();
             MessageBox.Show(result);
         }
     }
