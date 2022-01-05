@@ -1,12 +1,39 @@
 ﻿using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Design;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
 using System;
 using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
+using System.Linq;
 
-Console.WriteLine("Haho");
+var factory = new CookBookContextFactory();
+using var context = factory.CreateDbContext(args);
+
+Console.WriteLine("Add porridge for breakfast");
+var porridge = new Dish { Title = "Breakfast Porridge", Notes = "This is so good", Stars = 4};
+context.Add(porridge);
+await context.SaveChangesAsync();
+Console.WriteLine($"Added porridge ({porridge.Id}) successfully");
+
+Console.WriteLine("Checking stars for porridge");
+var dishes = await context.Dishes
+    .Where(d => d.Title.ToLower().Contains("porridge"))
+    .ToListAsync(); //  Linq to SQL by EF
+if (dishes.Count != 1) Console.Error.WriteLine("Error: exactly 1 Porridge should be have been in the DB" );
+Console.WriteLine($"Porridge has {dishes[0].Stars} stars");
+
+Console.WriteLine("Update porridge stars to 5");
+porridge.Stars = 5;
+await context.SaveChangesAsync(); // by EF change tracker DB is updated
+Console.WriteLine("Changed stars");
+
+Console.WriteLine($"Removing porridge from DB");
+var r = context.Remove(porridge);
+await context.SaveChangesAsync();
+Console.WriteLine("Porridge removed");
+
 
 // Model Classes
 class Dish
@@ -63,9 +90,11 @@ class CookBookContextFactory : IDesignTimeDbContextFactory<CookbookContext>
 
         var optionsBuilder = new DbContextOptionsBuilder<CookbookContext>();
         optionsBuilder
-            // Uncomment the following line if you want to print generated
-            // SQL statements on the console.
-            // .UseLoggerFactory(LoggerFactory.Create(builder => builder.AddConsole()))
+             // Uncomment the following line
+             // and install nuget package Microsoft.Extensions.Logging.Console
+             // if you want to print generated SQL statements on the console.
+             // (Not needed in ASP.NET)
+             .UseLoggerFactory(LoggerFactory.Create(builder => builder.AddConsole()))
             .UseSqlServer(configuration["ConnectionStrings:DefaultConnection"]);
 
         return new CookbookContext(optionsBuilder.Options);
