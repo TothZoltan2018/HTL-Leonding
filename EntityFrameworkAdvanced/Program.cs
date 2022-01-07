@@ -21,8 +21,9 @@ newDish.Notes = "Baz";
 await dbContext.SaveChangesAsync();
 
 await EntityStates(factory);
-
 await ChangeTracking(factory);
+await AttachEntities(factory);
+await NoTracking(factory);
 
 static async Task EntityStates(CookbookContextFactory factory)
 {
@@ -62,12 +63,41 @@ static async Task ChangeTracking(CookbookContextFactory factory)
 
     var entry = dbContext.Entry(newDish);
     var originalValue = entry.OriginalValues[nameof(Dish.Notes)].ToString();
-    var dishFromDatabase = await dbContext.Dishes.SingleAsync(d => d.Id == newDish.Id); // Reading a value Mem NOT from DB
+        var dishFromDatabase = await dbContext.Dishes.SingleAsync(d => d.Id == newDish.Id); // Reading a value Mem NOT from DB
 
     // --------------- a new dataContext -----------------
     using var dbContext2 = factory.CreateDbContext();    
     var dishFromDatabase2 = await dbContext2.Dishes.SingleAsync(d => d.Id == newDish.Id); // Reading a value from DB
 }
+
+static async Task AttachEntities(CookbookContextFactory factory)
+{
+    using var dbContext = factory.CreateDbContext();
+
+    var newDish = new Dish { Title = "Foo", Notes = "Bar" };
+    dbContext.Dishes.Add(newDish);
+    await dbContext.SaveChangesAsync();
+
+    // EF: Forget the "newDish" object
+    dbContext.Entry(newDish).State = EntityState.Detached;
+    var state = dbContext.Entry(newDish);
+
+    dbContext.Dishes.Update(newDish); // Updates a previously unknown object if it was in the DB. 
+    await dbContext.SaveChangesAsync();
+}
+
+static async Task NoTracking(CookbookContextFactory factory)
+{
+    using var dbContext = factory.CreateDbContext();
+
+    // Select * from Dishes..
+    // EF also stores all dishes in the original values to be able to track changes --> overhead
+    // var dishes = await dbContext.Dishes.ToArrayAsync();
+    // So, for Readonly scenarios to reduce overhead turn off tracking as below:
+    var dishes = await dbContext.Dishes.AsNoTracking().ToArrayAsync();
+    var state = dbContext.Entry(dishes[0]).State;
+}
+
 // Create model classes. They will become tables in the database.
 // In more advanced scenarios (e.g. with inheritance, m:n relationships),
 // the mapping becomes more complex.
