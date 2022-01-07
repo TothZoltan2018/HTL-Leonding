@@ -1,4 +1,5 @@
-﻿using Microsoft.EntityFrameworkCore;
+﻿using Microsoft.Data.SqlClient;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Design;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
@@ -7,6 +8,7 @@ using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 using System.Linq;
+using System.Linq.Expressions;
 using System.Text.Json;
 using System.Threading.Tasks;
 using static System.Console;
@@ -24,6 +26,9 @@ await EntityStates(factory);
 await ChangeTracking(factory);
 await AttachEntities(factory);
 await NoTracking(factory);
+await RawSql(factory);
+await Transactions(factory);
+await ExpressionTree(factory);
 
 static async Task EntityStates(CookbookContextFactory factory)
 {
@@ -97,6 +102,81 @@ static async Task NoTracking(CookbookContextFactory factory)
     var dishes = await dbContext.Dishes.AsNoTracking().ToArrayAsync();
     var state = dbContext.Entry(dishes[0]).State;
 }
+
+static async Task RawSql(CookbookContextFactory factory)
+{
+    using var dbContext = factory.CreateDbContext();
+
+    var dishes = await dbContext.Dishes
+        .FromSqlRaw("SELECT * FROM Dishes")
+        .ToArrayAsync();
+
+    var filter = "%z; DELETE FROM Dishes;";
+    //var filter = "%z; DELETE FROM Dishes;"; // SQL attack!
+    dishes = await dbContext.Dishes
+        .FromSqlInterpolated($"SELECT * FROM Dishes WHERE Notes LIKE {filter}")
+        .ToArrayAsync();
+        
+    // SQL Injection!!! --> SQL attack!
+    dishes = await dbContext.Dishes
+     .FromSqlRaw("SELECT * FROM Dishes WHERE Notes LIKE '" + filter + "'")
+     .ToArrayAsync();
+        
+    // Writing the DB. This executed immediately on DB
+    await dbContext.Database.ExecuteSqlRawAsync("DELETE FROM Dishes WHERE Id NOT IN (SELECT DishId FROM Ingredients)");
+    
+}
+
+static async Task Transactions(CookbookContextFactory factory)
+{
+    using var dbContext = factory.CreateDbContext();
+
+    using var transaction = await dbContext.Database.BeginTransactionAsync();
+    try
+    {
+        dbContext.Dishes.Add(new Dish { Title = "TRFoo", Notes = "TRBar" });
+        await dbContext.SaveChangesAsync();
+
+        await dbContext.Database.ExecuteSqlRawAsync("SELECT 1/0 as Bad"); // This will throw an exception
+        // If the code reaches here, writing to the DB will be executed
+        await transaction.CommitAsync();
+    }
+    catch (SqlException ex)
+    {
+        Error.WriteLine($"Something bad happened: {ex.Message}");
+    }
+}
+
+static async Task ExpressionTree(CookbookContextFactory factory)
+{
+    using var dbContext = factory.CreateDbContext();
+    var newDish = new Dish { Title = "Foo", Notes = "Bar" };
+    dbContext.Dishes.Add(newDish);
+    await dbContext.SaveChangesAsync();
+
+    var dishes = await dbContext.Dishes
+        .Where(d => d.Title.StartsWith("F"))
+        .ToArrayAsync();
+
+    Func<Dish, bool> f = d => d.Title.StartsWith("F"); // Just a method
+    // C# complirer is no longer generating machine language but object tree
+    // Object tree can be inspected and translated to
+    // a different language (eg. SQL) in runtime by tools such as EF.
+    // The Where clause takes the Func into an Expression. (See the Where definition.)
+    Expression<Func<Dish, bool>> ex = d => d.Title.StartsWith("F");
+
+    var inMemoryDishes = new[]
+    {
+        new Dish { Title = "Foo", Notes = "Bar" },
+        new Dish { Title = "Foo", Notes = "Bar" },
+    };
+
+    // Here the "normal" Where version will be called. (Without Expression) 
+    dishes = inMemoryDishes
+        .Where(d => d.Title.StartsWith("F"))
+        .ToArray();
+}
+
 
 // Create model classes. They will become tables in the database.
 // In more advanced scenarios (e.g. with inheritance, m:n relationships),
