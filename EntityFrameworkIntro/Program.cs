@@ -13,7 +13,7 @@ using var context = factory.CreateDbContext(args);
 
 Console.WriteLine("Add porridge for breakfast");
 var porridge = new Dish { Title = "Breakfast Porridge", Notes = "This is so good", Stars = 4};
-context.Add(porridge);
+context.Dishes.Add(porridge); // context.Add(porridge);
 await context.SaveChangesAsync();
 Console.WriteLine($"Added porridge ({porridge.Id}) successfully");
 
