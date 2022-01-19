@@ -64,15 +64,15 @@ static async Task ChangeTracking(CookbookContextFactory factory)
     var newDish = new Dish { Title = "Foo", Notes = "Bar"};
     dbContext.Dishes.Add(newDish);
     await dbContext.SaveChangesAsync();
-    newDish.Notes = "Baz";
+    newDish.Notes = "Baz"; // We do not write it out to the DB
 
     var entry = dbContext.Entry(newDish);
     var originalValue = entry.OriginalValues[nameof(Dish.Notes)].ToString();
-        var dishFromDatabase = await dbContext.Dishes.SingleAsync(d => d.Id == newDish.Id); // Reading a value Mem NOT from DB
+    var dishFromDatabase = await dbContext.Dishes.SingleAsync(d => d.Id == newDish.Id); // Reading a value "Baz" Mem (from the change tracker) NOT from DB
 
     // --------------- a new dataContext -----------------
     using var dbContext2 = factory.CreateDbContext();    
-    var dishFromDatabase2 = await dbContext2.Dishes.SingleAsync(d => d.Id == newDish.Id); // Reading a value from DB
+    var dishFromDatabase2 = await dbContext2.Dishes.SingleAsync(d => d.Id == newDish.Id); // Reading a value "Bar" from DB
 }
 
 static async Task AttachEntities(CookbookContextFactory factory)
@@ -87,8 +87,8 @@ static async Task AttachEntities(CookbookContextFactory factory)
     dbContext.Entry(newDish).State = EntityState.Detached;
     var state = dbContext.Entry(newDish);
 
-    dbContext.Dishes.Update(newDish); // Updates a previously unknown object if it was in the DB. 
-    await dbContext.SaveChangesAsync();
+    dbContext.Dishes.Update(newDish); // Updates a previously unknown object to change tracker as if it were in it. 
+    await dbContext.SaveChangesAsync();  
 }
 
 static async Task NoTracking(CookbookContextFactory factory)
@@ -98,7 +98,7 @@ static async Task NoTracking(CookbookContextFactory factory)
     // Select * from Dishes..
     // EF also stores all dishes in the original values to be able to track changes --> overhead
     // var dishes = await dbContext.Dishes.ToArrayAsync();
-    // So, for Readonly scenarios to reduce overhead turn off tracking as below:
+    // So, for Readonly scenarios (just for queries) to reduce overhead turn off tracking as below:
     var dishes = await dbContext.Dishes.AsNoTracking().ToArrayAsync();
     var state = dbContext.Entry(dishes[0]).State;
 }
@@ -111,20 +111,20 @@ static async Task RawSql(CookbookContextFactory factory)
         .FromSqlRaw("SELECT * FROM Dishes")
         .ToArrayAsync();
 
-    var filter = "%z; DELETE FROM Dishes;";
-    //var filter = "%z; DELETE FROM Dishes;"; // SQL attack!
+    var filter = "%z";
+    //var filter = "%z; DELETE FROM Dishes;"; // SQL attack will not work: SELECT * FROM Dishes WHERE Notes LIKE @p0 ! 
     dishes = await dbContext.Dishes
         .FromSqlInterpolated($"SELECT * FROM Dishes WHERE Notes LIKE {filter}")
         .ToArrayAsync();
-        
+
     // SQL Injection!!! --> SQL attack!
+    // SELECT * FROM Dishes WHERE Notes LIKE '%z'   .... so filter is taken in literally not by a @p0 parameter as above
     dishes = await dbContext.Dishes
      .FromSqlRaw("SELECT * FROM Dishes WHERE Notes LIKE '" + filter + "'")
      .ToArrayAsync();
         
     // Writing the DB. This executed immediately on DB
-    await dbContext.Database.ExecuteSqlRawAsync("DELETE FROM Dishes WHERE Id NOT IN (SELECT DishId FROM Ingredients)");
-    
+    await dbContext.Database.ExecuteSqlRawAsync("DELETE FROM Dishes WHERE Id NOT IN (SELECT DishId FROM Ingredients)");    
 }
 
 static async Task Transactions(CookbookContextFactory factory)
@@ -138,7 +138,7 @@ static async Task Transactions(CookbookContextFactory factory)
         await dbContext.SaveChangesAsync();
 
         await dbContext.Database.ExecuteSqlRawAsync("SELECT 1/0 as Bad"); // This will throw an exception
-        // If the code reaches here, writing to the DB will be executed
+        // Only if the code reaches here then writing to the DB will be executed
         await transaction.CommitAsync();
     }
     catch (SqlException ex)
@@ -159,7 +159,7 @@ static async Task ExpressionTree(CookbookContextFactory factory)
         .ToArrayAsync();
 
     Func<Dish, bool> f = d => d.Title.StartsWith("F"); // Just a method
-    // C# complirer is no longer generating machine language but object tree
+    // C# compiler is no longer generating machine language but object tree
     // Object tree can be inspected and translated to
     // a different language (eg. SQL) in runtime by tools such as EF.
     // The Where clause takes the Func into an Expression. (See the Where definition.)

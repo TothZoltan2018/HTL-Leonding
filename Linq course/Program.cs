@@ -50,7 +50,7 @@ int[] GetSquares(int exclusiveUpperLimit)
         .Select(x => x * x).ToArray());
 }
 
-var o = GetSquares(4700000);
+var o = GetSquares(7);
 
 Console.WriteLine();
 

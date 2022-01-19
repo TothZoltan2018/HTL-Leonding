@@ -13,14 +13,14 @@ using var context = factory.CreateDbContext(args);
 
 Console.WriteLine("Add porridge for breakfast");
 var porridge = new Dish { Title = "Breakfast Porridge", Notes = "This is so good", Stars = 4};
-context.Dishes.Add(porridge); // context.Add(porridge);
+context.Dishes.Add(porridge); // context.Add(porridge); // OK ,too
 await context.SaveChangesAsync();
 Console.WriteLine($"Added porridge ({porridge.Id}) successfully");
 
 Console.WriteLine("Checking stars for porridge");
 var dishes = await context.Dishes
     .Where(d => d.Title.ToLower().Contains("porridge"))
-    .ToListAsync(); //  Linq to SQL by EF
+    .ToListAsync(); //  Linq to SQL by EF. By ToListAsync() will the DB query be happening, not before.
 if (dishes.Count != 1) Console.Error.WriteLine("Error: exactly 1 Porridge should be have been in the DB" );
 Console.WriteLine($"Porridge has {dishes[0].Stars} stars");
 
@@ -30,7 +30,7 @@ await context.SaveChangesAsync(); // by EF change tracker DB is updated
 Console.WriteLine("Changed stars");
 
 Console.WriteLine($"Removing porridge from DB");
-var r = context.Remove(porridge);
+context.Dishes.Remove(porridge); //context.Remove(porridge); // OK ,too
 await context.SaveChangesAsync();
 Console.WriteLine("Porridge removed");
 
